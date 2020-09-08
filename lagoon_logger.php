@@ -96,9 +96,11 @@ class LagoonLogger {
   }
 }
 
-$args = $argv;
+if($argc <= 1) {
+  print("Too few arguments. Usage `lagoon_logger.php <DATA TO LOG>`\n");
+  exit(1);
+}
 
-var_dump($args);
 
-
-//$logger = new LagoonLogger(LagoonLogger::LAGOON_LOGS_DEFAULT_HOST, LagoonLogger::LAGOON_LOGS_DEFAULT_PORT);
+$logger = new LagoonLogger(LagoonLogger::LAGOON_LOGS_DEFAULT_HOST, LagoonLogger::LAGOON_LOGS_DEFAULT_PORT);
+$logger->log($argv[1]);
