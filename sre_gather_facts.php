@@ -10,7 +10,8 @@
  *
  */
 
-//TODO: Ensure that
+
+const LAGOON_CLI = "lagoon";
 
 
 /**
@@ -20,64 +21,70 @@
  */
 
 $gatherers = [
-//  'drush_pml' => function () {
-//      $ret = null;
-//      $output = null;
-//      $lastline = exec('drush pml --format=json', $output, $ret);
-//      if ($ret !== 0) {
-//          throw new Exception("Could not run `drush pml`");
-//      }
-//
-//      $jsonOutputString = implode('', $output);
-//      $moduleData = json_decode($jsonOutputString, true);
-//      if (json_last_error()) {
-//          throw new Exception("Could not parse `drush pml` output");
-//      }
-//
-//      return array_map(function ($e) {
-//          return !empty($e['version']) ? $e['version'] : 'no version info';
-//      }, $moduleData);
-//  },
+      'drush_pml' => function () {
+          $ret = null;
+          $output = null;
+          $lastline = exec('drush pml --format=json', $output, $ret);
+          if ($ret !== 0) {
+              throw new Exception("Could not run `drush pml`");
+          }
+
+          $jsonOutputString = implode('', $output);
+          $moduleData = json_decode($jsonOutputString, true);
+          if (json_last_error()) {
+              throw new Exception("Could not parse `drush pml` output");
+          }
+
+          return array_map(function ($e) {
+              return !empty($e['version']) ? $e['version'] : 'no version info';
+          }, $moduleData);
+      },
   'php-details' => function () {
       return ['php-version' => phpversion()];
   },
 ];
 
 
-function isCliAvailable() {
-    
+function isCliAvailable()
+{
+    $retVal = 0;
+    $retOutput = [];
+
+    exec(sprintf("which %s", LAGOON_CLI), $retOutput, $retVal);
+
+    if ($retVal == 0) {
+        return $retOutput[0];
+    }
+    return false;
 }
 
 function writeFactsToFactsDB($facts)
 {
-    //invariants
-    //1 - we want to know the environment and
 
     $projectName = !empty(getenv('LAGOON_PROJECT')) ? getenv('LAGOON_PROJECT') : getenv('LAGOON_SAFE_PROJECT');
     $environmentName = !empty(getenv('LAGOON_ENVIRONMENT')) ? getenv('LAGOON_ENVIRONMENT') : getenv('LAGOON_GIT_BRANCH');
 
-    if(empty($projectName) || empty($environmentName)) {
-        return FALSE;
+    if (empty($projectName) || empty($environmentName)) {
+        return false;
     }
 
-    echo "$projectName:$environmentName\n";
-
-    //2 - we want to ensure that the lagoon-cli is available
+    if ($cli = isCliAvailable() === false) {
+        return false;
+    }
 
 
     foreach ($facts as $key => $value) {
-//        echo(sprintf("%s:%s\n", $key, $value));
-        //delete the fact if it already exists
         $responseOutput = [];
         $responseRetVal = 0;
-
-        exec(sprintf('lagoon-cli fact delete -p %s -e %s -N "%s"', $projectName, $environmentName, $key), $responseOutput, $responseRetVal);
-        print_r($responseOutput);
-        print_r($responseRetVal);
-
-        exec(sprintf('lagoon-cli fact add -p %s -e %s -N "%s" -V "%s"', $projectName, $environmentName, $key, $value), $responseOutput, $responseRetVal);
-        print_r($responseOutput);
-
+        exec(sprintf('%s fact delete -p %s -e %s -N "%s" 2> /dev/null', LAGOON_CLI,
+          $projectName, $environmentName, $key), $responseOutput,
+          $responseRetVal);
+        if($responseRetVal > 0) {
+            var_dump($responseOutput);
+        }
+        exec(sprintf('%s fact add -p %s -e %s -N "%s" -V "%s" 2> /dev/null', LAGOON_CLI,
+          $projectName, $environmentName, $key, $value), $responseOutput,
+          $responseRetVal);
     }
 
 }
@@ -94,4 +101,4 @@ $output = array_reduce($gatherers, function ($carry, $element) {
 
 writeFactsToFactsDB($output);
 
-//echo json_encode($output);
+echo json_encode($output);
