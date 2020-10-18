@@ -17,38 +17,53 @@ if (empty($PROJECT_NAME) || empty($ENVIRONMENT_NAME)) {
  */
 
 $gatherers = [
-  'drush_pml' => function () {
-      $ret = null;
+  'drush_status' => function () {
+      $ret = 0;
       $output = null;
-      $lastline = exec('drush pml --format=json', $output, $ret);
+      $lastline = exec('drush status --format=json 2> /dev/null', $output, $ret);
       if ($ret !== 0) {
-          throw new Exception("Could not run `drush pml`");
+          throw new Exception("Could not run `drush status`");
       }
 
       $jsonOutputString = implode('', $output);
-      $moduleData = json_decode($jsonOutputString, true);
+
+      $statusData = json_decode($jsonOutputString, true);
       if (json_last_error()) {
-          throw new Exception("Could not parse `drush pml` output");
+          throw new Exception("Could not parse `drush status` output");
       }
 
-      return array_map(function ($e) {
-          return $e['version'];
-      }, $moduleData);
+      $retArr = [];
+      if(!empty($statusData['drupal-version'])) {
+          $retArr['drupal-version'] = $statusData['drupal-version'];
+      }
+      if(!empty($statusData['drush-version'])) {
+          $retArr['drush-version'] = $statusData['drush-version'];
+      }
+
+    return $retArr;
   },
+//  'drush_pml' => function () {
+//      $ret = null;
+//      $output = null;
+//      $lastline = exec('drush pml --format=json 2> /dev/null', $output, $ret);
+//      if ($ret !== 0) {
+//          throw new Exception("Could not run `drush pml`");
+//      }
+//
+//      $jsonOutputString = implode('', $output);
+//      $moduleData = json_decode($jsonOutputString, true);
+//      if (json_last_error()) {
+//          throw new Exception("Could not parse `drush pml` output");
+//      }
+//
+//      return array_map(function ($e) {
+//          return $e['version'];
+//      }, $moduleData);
+//  },
   'php-details' => function () {
       return ['php-version' => phpversion()];
   },
 ];
-
-
-//$output = array_reduce($gatherers, function ($carry, $element) {
-//    try {
-//        return array_merge($carry, $element());
-//    } catch (Exception $exception) {
-//        fwrite(STDERR, $exception->getMessage());
-//        return $carry;
-//    }
-//}, []);
 
 
 /**
@@ -96,7 +111,6 @@ function callGraphQL($token, $query, $queryType = "query")
         die('error occured during curl exec. Additional info: ' . var_export($info));
     }
     curl_close($curl);
-    var_dump($curl_response);
     $responseDecode = json_decode($curl_response);
     if (json_last_error() > 0) {
         throw new Exception("API decode error: " . json_last_error_msg());
@@ -158,12 +172,37 @@ function writeFact($token, $environmentId, $factName, $factValue)
     return $response->addFact;
 }
 
-$token = getToken();
-$projectId = getProjectID($token, $PROJECT_NAME);
-$DTAEnvironmentDetails = getEnvironmentIdAndFacts($token, $projectId,
-  $ENVIRONMENT_NAME);
+$gatheredFacts = array_reduce($gatherers, function ($carry, $element) {
+    try {
+        return array_merge($carry, $element());
+    } catch (Exception $exception) {
+        fwrite(STDERR, $exception->getMessage());
+        return $carry;
+    }
+}, []);
 
-//deleteFact($token, $DTAEnvironmentDetails->id, "test");
-//writeFact($token, $DTAEnvironmentDetails->id, "testingWrite", "testing write value");
 
-//echo json_encode($output);
+try {
+    $token = getToken();
+    $projectId = getProjectID($token, $PROJECT_NAME);
+    $DTAEnvironmentDetails = getEnvironmentIdAndFacts($token, $projectId,
+      $ENVIRONMENT_NAME);
+
+    $existentFacts = array_reduce($DTAEnvironmentDetails->facts, function ($carry, $e) {
+        $carry[$e->name] = $e;
+        return $carry;
+    }, []);
+
+    foreach ($gatheredFacts as $factName => $factValue) {
+        if(in_array($factName, array_keys($existentFacts))) {
+            deleteFact($token, $DTAEnvironmentDetails->id, $factName);
+        }
+        //TODO: do we need to check this write was successful over and above
+        // not having an error thrown by the called functions?
+        writeFact($token, $DTAEnvironmentDetails->id, $factName, $factValue);
+    }
+} catch (Exception $ex) {
+    printf("Unable to process facts: " . $ex->getMessage());
+    exit(1);
+}
+
