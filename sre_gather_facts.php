@@ -19,7 +19,7 @@ function run() {
   $gatheredFacts = [];
   foreach (getGatherers() as $gatherer => $gatherFunc) {
     try {
-      $facts = $gatherFunc();
+      $facts = $gatherFunc($gatheredFacts);
       $gatheredFacts[$gatherer] = [];
       foreach ($facts as $name => $value) {
         $gatheredFacts[$gatherer][$name] = $value;
@@ -28,6 +28,7 @@ function run() {
       echo "Could not execute : $gatherer\n";
     }
   }
+
 
   try {
     $token = getToken();
@@ -61,7 +62,7 @@ function run() {
 
 function getGatherers() {
   $gatherers = [
-    'drush_status' => function () {
+    'drush_status' => function ($existingData = []) {
       $ret = 0;
       $output = NULL;
       $lastline = exec('drush status --format=json 2> /dev/null', $output,
@@ -87,7 +88,7 @@ function getGatherers() {
 
       return $retArr;
     },
-    'drush_pml' => function () {
+    'drush_pml' => function ($existingData = []) {
       $ret = NULL;
       $output = NULL;
       $lastline = exec('drush pml --format=json 2> /dev/null', $output, $ret);
@@ -105,8 +106,53 @@ function getGatherers() {
         return $e['version'];
       }, $moduleData);
     },
-    'php-details' => function () {
+    'php-details' => function ($existingData = []) {
       return ['php-version' => phpversion()];
+    },
+    'drupal_node_count' => function ($existingData = []) {
+
+      //we won't run this module unless we've got a drupal version
+      if(empty($existingData['drush_status']['drupal-version'])) {
+          throw new Exception("Dependencies for 'drupal_node_count' unmet - skipping");
+      }
+
+      $drupalVersion = explode('.', $existingData['drush_status']['drupal-version'])[0];
+
+      $ret = 0;
+      $output = NULL;
+      if($drupalVersion == "7") {
+        $lastline = exec('echo "select count(*) as \'thecount\' from node where status = 1;" | drush sql-cli | tail -n1 2>/dev/null', $output,
+          $ret);
+      } else {
+        $lastline = exec('drush php-eval "echo count(\Drupal::entityQuery(\'node\')->condition(\'status\', 1)->execute())"', $output,
+          $ret);
+      }
+
+      if ($ret !== 0) {
+        throw new Exception("Could not run `drupal_node_count`");
+      }
+
+      $retArr['node-count'] = $output[0];
+
+      //drush php-eval "print count(language_list());"
+
+      $ret = 0;
+      $output = NULL;
+      if($drupalVersion == "7") {
+        $lastline = exec('drush php-eval "print count(language_list());" 2>/dev/null', $output,
+          $ret);
+      } else {
+        $lastline = exec('drush php-eval "echo count(Drupal::languageManager()->getLanguages());"', $output,
+          $ret);
+      }
+
+      if ($ret !== 0) {
+        throw new Exception("Could not run `drupal_node_count`");
+      }
+
+      $retArr['lang-count'] = $output[0];
+
+      return $retArr;
     },
   ];
   return $gatherers;
