@@ -28,8 +28,7 @@ function run() {
       echo "Could not execute : $gatherer\n";
     }
   }
-
-
+  
   try {
     $token = getToken();
     $projectId = getProjectID($token, $PROJECT_NAME);
@@ -112,39 +111,35 @@ function getGatherers() {
     'drupal_node_count' => function ($existingData = []) {
 
       //we won't run this module unless we've got a drupal version
-      if(empty($existingData['drush_status']['drupal-version'])) {
-          throw new Exception("Dependencies for 'drupal_node_count' unmet - skipping");
+      if (empty($existingData['drush_status']['drupal-version'])) {
+        throw new Exception("Dependencies for 'drupal_node_count' unmet - skipping");
       }
 
-      $drupalVersion = explode('.', $existingData['drush_status']['drupal-version'])[0];
+      $drupalVersion = explode('.',
+        $existingData['drush_status']['drupal-version'])[0];
+
+      $drupalLangCountCommand = 'drush php-eval "echo count(Drupal::languageManager()->getLanguages());"';
+      $drupalNodeCountCommand = 'drush php-eval "echo count(\Drupal::entityQuery(\'node\')->condition(\'status\', 1)->execute())"';
+
+      if ($drupalVersion == "7") {
+        $drupalLangCountCommand = 'drush php-eval "print count(language_list());" 2>/dev/null';
+        $drupalNodeCountCommand = 'echo "select count(*) as \'thecount\' from node where status = 1;" | drush sql-cli | tail -n1 2>/dev/null';
+      }
+
 
       $ret = 0;
       $output = NULL;
-      if($drupalVersion == "7") {
-        $lastline = exec('echo "select count(*) as \'thecount\' from node where status = 1;" | drush sql-cli | tail -n1 2>/dev/null', $output,
-          $ret);
-      } else {
-        $lastline = exec('drush php-eval "echo count(\Drupal::entityQuery(\'node\')->condition(\'status\', 1)->execute())"', $output,
-          $ret);
-      }
-
+      $lastline = exec($drupalNodeCountCommand, $output,
+        $ret);
       if ($ret !== 0) {
         throw new Exception("Could not run `drupal_node_count`");
       }
-
       $retArr['node-count'] = $output[0];
-
-      //drush php-eval "print count(language_list());"
-
       $ret = 0;
       $output = NULL;
-      if($drupalVersion == "7") {
-        $lastline = exec('drush php-eval "print count(language_list());" 2>/dev/null', $output,
-          $ret);
-      } else {
-        $lastline = exec('drush php-eval "echo count(Drupal::languageManager()->getLanguages());"', $output,
-          $ret);
-      }
+
+      $lastline = exec($drupalLangCountCommand, $output,
+        $ret);
 
       if ($ret !== 0) {
         throw new Exception("Could not run `drupal_node_count`");
